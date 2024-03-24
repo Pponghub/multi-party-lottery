@@ -16,7 +16,7 @@ contract lottery is CommitReveal {
     uint private reward = 0;
     address owner;
 
-    constructor (uint _N,uint _T1,uint _T2,uint _T3) {
+    constructor (uint _N,uint _T1,uint _T2,uint _T3) payable  {
         require(_N >= 2,"not enough player ");
         N = _N;
         T1 = _T1;
@@ -25,21 +25,22 @@ contract lottery is CommitReveal {
         owner = msg.sender;
     }
 
-    function stage1(uint transaction,uint salt) public payable{
+    function stage1(uint transaction,uint salt) public payable{ 
         if(timeStart == 0){
             timeStart = block.timestamp;
         }
-        require(block.timestamp - timeStart <= T1);
-        require(msg.value == 0.001 ether);
+        require(block.timestamp - timeStart <= T1,"time");
+        require(msg.value == 0.001 ether,"lol");
         reward += msg.value;
-        player[msg.sender] = transaction;
+        player[msg.sender] = 0;
         commit(getSaltedHash(bytes32(transaction),bytes32(salt)));
         playerETH[msg.sender] = 0;
     }
 
     function stage2(uint transaction,uint salt) public {
-        require(T1 <= block.timestamp - timeStart && block.timestamp - timeStart <= T2);
+        require(T1 <= block.timestamp - timeStart && block.timestamp - timeStart <= T2,"");
         revealAnswer(bytes32(transaction), bytes32(salt));
+        player[msg.sender] = transaction;
         if(player[msg.sender] >=0 && player[msg.sender] <= 999){
             noPlayer[numPlayer] = msg.sender;
             playerETH[msg.sender] = 1000;
@@ -47,7 +48,7 @@ contract lottery is CommitReveal {
         }
     }
 
-    function _stage3() private {
+    function stage3() public payable  {
         require(block.timestamp - timeStart >= T2 && block.timestamp - timeStart <= T3);
         address payable contractOwner = payable (owner);
         if(numPlayer == 0){
@@ -68,7 +69,7 @@ contract lottery is CommitReveal {
         require(block.timestamp - timeStart > T3);
         require(playerETH[msg.sender] == 1000);
         address payable account = payable (msg.sender);
-        account.transfer(1000);
+        account.transfer(0.001 ether);
         playerETH[msg.sender] = 0;
     }
 
