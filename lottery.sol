@@ -3,133 +3,73 @@ pragma solidity >=0.7.0 <0.9.0;
 
 import "./CommitReveal.sol";
 
-contract RWAPSSF is CommitReveal {
-    struct Player {
-        uint choice; // 0 - Rock, 1 - Fire , 2 - Scissors , 3 - Sponge , 4 - Paper , 5 - Air , 6 - Water , 7 - undefined
-        address addr;
-        uint time;
-    }
-    uint public numPlayer = 0;
-    uint public numReveal = 0;
-    uint public numCommit = 0;
-    uint public commitTimeP0;
-    uint public commitTimeP1;
-    uint public revealTimeP0;
-    uint public revealTimeP1;
-    uint public reward = 0;
-    mapping (uint => Player) public player;
-    uint public numInput = 0;
+contract lottery is CommitReveal {
+    uint private N = 0;
+    uint private T1 = 0;
+    uint private T2 = 0;
+    uint private T3 = 0;
+    uint private numPlayer = 0;
+    uint private timeStart = 0;
+    mapping (address => uint) private player;
+    mapping (uint => address) private noPlayer;
+    mapping (address => uint) private playerETH;
+    uint private reward = 0;
+    address owner;
 
-    function addPlayer() public payable {
-        require(numPlayer < 2);
-        require(msg.value == 1 ether);
+    constructor (uint _N,uint _T1,uint _T2,uint _T3) {
+        require(_N >= 2,"not enough player ");
+        N = _N;
+        T1 = _T1;
+        T2 = _T2 + _T1;
+        T3 = _T3 + _T2 + _T1;
+        owner = msg.sender;
+    }
+
+    function stage1(uint transaction,uint salt) public payable{
+        if(timeStart == 0){
+            timeStart = block.timestamp;
+        }
+        require(block.timestamp - timeStart <= T1);
+        require(msg.value == 0.001 ether);
         reward += msg.value;
-        player[numPlayer].addr = msg.sender;
-        player[numPlayer].choice = 7;
-        player[numPlayer].time = block.timestamp;
-        numPlayer++;
+        player[msg.sender] = transaction;
+        commit(getSaltedHash(bytes32(transaction),bytes32(salt)));
+        playerETH[msg.sender] = 0;
     }
 
-    function input(uint choice,uint salt) public  {
-        require(numPlayer == 2);
-        require(choice == 0 || choice == 1 || choice == 2 || choice == 3 || choice == 4 || choice == 5 || choice == 6);
-        if(msg.sender == player[0].addr){
-            player[0].choice = choice;
-            commit(getSaltedHash(bytes32(choice),bytes32(salt)));
-            commitTimeP0 = block.timestamp;
-        }else{
-            player[1].choice = choice;
-            commit(getSaltedHash(bytes32(choice),bytes32(salt)));
-            commitTimeP1 = block.timestamp;
+    function stage2(uint transaction,uint salt) public {
+        require(T1 <= block.timestamp - timeStart && block.timestamp - timeStart <= T2);
+        revealAnswer(bytes32(transaction), bytes32(salt));
+        if(player[msg.sender] >=0 && player[msg.sender] <= 999){
+            noPlayer[numPlayer] = msg.sender;
+            playerETH[msg.sender] = 1000;
+            numPlayer++;
         }
-        numCommit++;
     }
 
-    function withdraw() public {
-        uint idx;
-        if(msg.sender == player[0].addr){
-            idx = 0;
+    function _stage3() private {
+        require(block.timestamp - timeStart >= T2 && block.timestamp - timeStart <= T3);
+        address payable contractOwner = payable (owner);
+        if(numPlayer == 0){
+            contractOwner.transfer(reward);
         }else{
-            idx = 1;
-        }
-        address payable account = payable(player[idx].addr);
-        if(numPlayer == 1 ){
-            require((block.timestamp - player[idx].time) > 600 ,"not enough time 1");
-            account.transfer(reward);
-        }else if(numPlayer == 2 && numCommit==1){
-            if(idx == 0){
-                require((block.timestamp - commitTimeP0) > 300,"not enough time 2 ");
-            }else{
-                require((block.timestamp - commitTimeP1) > 300,"not enough time 3 ");
+            uint winner = player[noPlayer[0]];
+            for (uint i=1; i<numPlayer ; i++){
+                winner = winner ^ player[noPlayer[i]];
             }
-            account.transfer(reward);
-        }else if(numPlayer == 2 && numReveal==1){
-            if(idx == 0){
-                require((block.timestamp - revealTimeP0) > 300,"not enough time 4 ");
-            }else{
-                require((block.timestamp - revealTimeP1) > 300,"not enough time 5 ");
-            }
-            account.transfer(reward);
-        }
-        _reset();
-    }
-
-    function revealPlayer(uint choice,uint salt) public {
-        uint idx;
-        if(msg.sender == player[0].addr){
-            idx = 0;
-        }else{
-            idx = 1;
-        }
-        require(numPlayer == 2);
-        require(numCommit == 2);
-        require(msg.sender == player[idx].addr);
-        require(choice == 0 || choice == 1 || choice == 2 || choice == 3 || choice == 4 || choice == 5 || choice == 6);
-        revealAnswer(bytes32(choice), bytes32(salt));
-        numReveal++;
-        if(idx==0){
-            revealTimeP0 = block.timestamp;
-        }else{
-            revealTimeP1 = block.timestamp;
-        }
-
-        if (numReveal == 2) {
-            _checkWinnerAndPay();
+            winner = winner % numPlayer;
+            address payable account = payable (noPlayer[winner]);
+            account.transfer((reward *98)/100);
+            contractOwner.transfer((reward *2)/100);
         }
     }
 
-    function _checkWinnerAndPay() private {
-        uint p0Choice = player[0].choice;
-        uint p1Choice = player[1].choice;
-        address payable account0 = payable(player[0].addr);
-        address payable account1 = payable(player[1].addr);
-        if ((p0Choice + 1) % 7 == p1Choice || (p0Choice + 2) % 7 == p1Choice || (p0Choice + 3) % 7 == p1Choice ) {
-            // to pay player[0]
-            account0.transfer(reward);
-        }
-        else if ((p1Choice + 1) % 7 == p0Choice || (p1Choice + 2) % 7 == p0Choice || (p1Choice + 3) % 7 == p0Choice) {
-            // to pay player[1]
-            account1.transfer(reward);    
-        }
-        else {
-            // to split reward
-            account0.transfer(reward / 2);
-            account1.transfer(reward / 2);
-        }
-        _reset();
+    function stage4() public payable {
+        require(block.timestamp - timeStart > T3);
+        require(playerETH[msg.sender] == 1000);
+        address payable account = payable (msg.sender);
+        account.transfer(1000);
+        playerETH[msg.sender] = 0;
     }
 
-    function _reset() private {
-        numPlayer = 0;
-        numReveal = 0;
-        numCommit = 0;
-        commitTimeP0 = 0;
-        commitTimeP1 = 0;
-        revealTimeP0 = 0;
-        revealTimeP1 = 0;
-        reward = 0;
-        numInput = 0;
-        delete player[0];
-        delete player[1];
-    }
 }
