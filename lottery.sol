@@ -73,4 +73,14 @@ contract lottery is CommitReveal {
         playerETH[msg.sender] = 0;
     }
 
+    function reset_game() public payable {
+        require(block.timestamp - timeStart > T3);
+        require(owner == msg.sender);
+        numPlayer = 0;
+        timeStart = 0;
+        address payable contractOwner = payable (owner);
+        contractOwner.transfer(reward);
+        reward = 0;
+    }
+
 }
